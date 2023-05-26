@@ -129,9 +129,7 @@ class TermScraper:
     async def scrape_tr(self, page: Page, locator_tr: Locator, retry_depth: int = 1):
         try:
             section_tr: SectionTr = await create_section_tr(locator_tr.element_handle(timeout=5000))
-            if int(section_tr.tr_data_id) in Section.sections:
-                self.progress_bar.update(1)
-                return
+            if int(section_tr.tr_data_id) in Section.sections: return
             course_id = Course.get_course(section_tr.subject, section_tr.course_number)
             if course_id is not None:
                 self.sections.append(Section(section_tr=section_tr, course_id=course_id))
