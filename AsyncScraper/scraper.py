@@ -3,6 +3,7 @@ import asyncio
 from playwright.async_api import async_playwright, expect
 from playwright.async_api import ElementHandle, TimeoutError, Error, Playwright, Page, Locator, LocatorAssertions
 import pandas as pd
+from tqdm import tqdm
 from .sanitizingClasses import SectionTr, Course, Section, create_section_tr
 
 class TermScraper:
@@ -49,7 +50,7 @@ class TermScraper:
             self.last_page =  int(await page.locator('span[class="paging-text total-pages"]').inner_text())
             total_sections_text: str = await page.locator('span[class="results-out-of"]').inner_text()
             self.sections_count: int = int(total_sections_text.split(" ")[0])
-            pages_each: int = (self.last_page // 8)
+            pages_each: int = (self.last_page // num_of_tabs)
             pages_left_over: int = self.last_page % num_of_tabs
             if num_of_tabs > self.last_page:
                 pages_each = 1
@@ -71,7 +72,10 @@ class TermScraper:
             self.sections: list[Section] = []
             tasks.append(self.add_to_csv())
 
+            self.progress_bar = tqdm(total=self.sections_count)
+
             await asyncio.gather(*tasks)
+            self.progress_bar.close()
 
             await self.browser.close()
 
@@ -88,7 +92,7 @@ class TermScraper:
         await page.click('button[id="term-go"]') # go to term search
         await page.click('button[id="search-go"]') # search with no param for the term
         await page.locator('select[class="page-size-select"]').select_option('50')
-        await page.wait_for_selector('select[aria-label="50 per page"]', timeout=5000)
+        await page.wait_for_selector('select[aria-label="50 per page"]', timeout=10000)
 
     
 
@@ -125,15 +129,19 @@ class TermScraper:
     async def scrape_tr(self, page: Page, locator_tr: Locator, retry_depth: int = 1):
         try:
             section_tr: SectionTr = await create_section_tr(locator_tr.element_handle(timeout=5000))
-            if int(section_tr.tr_data_id) in Section.sections: return
+            if int(section_tr.tr_data_id) in Section.sections:
+                self.progress_bar.update(1)
+                return
             course_id = Course.get_course(section_tr.subject, section_tr.course_number)
             if course_id is not None:
                 self.sections.append(Section(section_tr=section_tr, course_id=course_id))
+                self.progress_bar.update(1)
                 return
             new_course = Course(section_tr=section_tr)
             self.sections.append(Section(section_tr=section_tr, course_id=new_course.id))
             await new_course.add_catalog_info(tr=section_tr.tr, page=page)
             self.courses.append(new_course)
+            self.progress_bar.update(1)
         except Error:
             if retry_depth >= self.MAX_TR_RETRY: raise Error("Max tr retry limit reached")
             possible_button_to_close: ElementHandle = await page.query_selector('button["primary-button small-button"]')

@@ -95,8 +95,8 @@ class Course:
         try:
             self.course_title, self.taught_how = section_tr.course_title.replace('"', "").split("\n")
         except ValueError:
-            print("\n\n\n\n",section_tr.course_title,"\n\n\n\n")
-            raise(ValueError(section_tr.course_title))
+            self.course_title = section_tr.course_title
+            self.taught_how = section_tr.course_title
         self.subject = section_tr.subject
         self.number = section_tr.course_number
         self.co_requisites = None
