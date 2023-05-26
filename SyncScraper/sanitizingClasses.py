@@ -1,11 +1,9 @@
 from playwright.sync_api import ElementHandle
 from playwright.sync_api import Page
-from typing import Union
-from functools import lru_cache
 
 class SectionTr:
     def __init__(self, tr: ElementHandle) -> None:
-        self.tr = tr
+        self.tr: ElementHandle = tr
         # Locate the <td> elements
         course_title_td = tr.query_selector('td[xe-field="courseTitle"]')
         subject_td = tr.query_selector('td[xe-field="subject"]')
