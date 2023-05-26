@@ -7,7 +7,7 @@ from tqdm import tqdm
 from .sanitizingClasses import SectionTr, Course, Section, create_section_tr
 
 class TermScraper:
-    def __init__(self, term: str, base_out_path: str, is_headless: bool = False, url: str = 'https://ssb1-reg.banner.marist.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search', MAX_PAGE_RETRY=5, MAX_TR_RETRY=3, TO_CSV_BUFFER: int=5_000) -> None:
+    def __init__(self, term: str, base_out_path: str, url: str,  is_headless: bool = False, MAX_PAGE_RETRY=5, MAX_TR_RETRY=3, TO_CSV_BUFFER: int=5_000) -> None:
         self.term: str = term
         self.out_path: str = f"{base_out_path}/{term.replace(' ', '')}"
         self.headless: bool = is_headless
@@ -136,8 +136,8 @@ class TermScraper:
                 self.progress_bar.update(1)
                 return
             new_course = Course(section_tr=section_tr)
-            self.sections.append(Section(section_tr=section_tr, course_id=new_course.id))
             await new_course.add_catalog_info(tr=section_tr.tr, page=page)
+            self.sections.append(Section(section_tr=section_tr, course_id=new_course.id))
             self.courses.append(new_course)
             self.progress_bar.update(1)
         except Error:
