@@ -21,6 +21,7 @@ class TermScraper:
     
     def prep_csv(self) -> None:
         if not os.path.exists(self.out_path): # No previous data
+            self.is_previous_data = False
             os.makedirs(self.out_path)
             course_headers_df = pd.DataFrame(columns=Course.header_row)
             section_headers_df = pd.DataFrame(columns=Section.header_row)
@@ -28,6 +29,7 @@ class TermScraper:
             section_headers_df.to_csv(f"{self.out_path}/sections.csv", header=True, index=False)
             return
         # There is previous data
+        self.is_previous_data = True
         courses_df = pd.read_csv(f"{self.out_path}/courses.csv", usecols=["subject", "number", "id"])
         for _, row in courses_df.iterrows():
             Course.next_id += 1
@@ -129,7 +131,9 @@ class TermScraper:
     async def scrape_tr(self, page: Page, locator_tr: Locator, retry_depth: int = 1):
         try:
             section_tr: SectionTr = await create_section_tr(locator_tr.element_handle(timeout=5000))
-            if int(section_tr.tr_data_id) in Section.sections: return
+            if int(section_tr.tr_data_id) in Section.sections:
+                if self.is_previous_data: self.progress_bar.update(1) 
+                return
             course_id = Course.get_course(section_tr.subject, section_tr.course_number)
             if course_id is not None:
                 self.sections.append(Section(section_tr=section_tr, course_id=course_id))
