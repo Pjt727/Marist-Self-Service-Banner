@@ -4,12 +4,13 @@ from playwright.async_api import async_playwright, expect
 from playwright.async_api import ElementHandle, TimeoutError, Error, Playwright, Page, Locator, LocatorAssertions
 import pandas as pd
 from tqdm import tqdm
-from .sanitizingClasses import SectionTr, Course, Section, create_section_tr
+from .sanitizingClasses import SectionTr, Course, Section, create_section_tr, create_course
 
 class TermScraper:
     def __init__(self, term: str, base_out_path: str, url: str,  is_headless: bool = False, MAX_PAGE_RETRY=5, MAX_TR_RETRY=3, TO_CSV_BUFFER: int=5_000) -> None:
         self.term: str = term
-        self.out_path: str = f"{base_out_path}/{term.replace(' ', '')}"
+        self.section_out_path: str = f"{base_out_path}/{term.replace(' ', '')}/sections.csv"
+        self.course_out_path: str = f"{base_out_path}/courses.csv"
         self.headless: bool = is_headless
         self.url: str = url
         self.MAX_PAGE_RETRY: int = MAX_PAGE_RETRY
@@ -20,24 +21,19 @@ class TermScraper:
 
     
     def prep_csv(self) -> None:
-        if not os.path.exists(self.out_path): # No previous data
-            self.is_previous_data = False
-            os.makedirs(self.out_path)
+        if not os.path.exists(self.course_out_path): # No course previous data
             course_headers_df = pd.DataFrame(columns=Course.header_row)
-            section_headers_df = pd.DataFrame(columns=Section.header_row)
-            course_headers_df.to_csv(f"{self.out_path}/courses.csv", header=True, index=False)
-            section_headers_df.to_csv(f"{self.out_path}/sections.csv", header=True, index=False)
-            return
-        # There is previous data
-        self.is_previous_data = True
-        courses_df = pd.read_csv(f"{self.out_path}/courses.csv", usecols=["subject", "number", "id"])
-        for _, row in courses_df.iterrows():
-            Course.next_id += 1
-            Course.courses[row['subject'] + row['number']] = int(row['id'])
+            course_headers_df.to_csv(self.course_out_path, header=True, index=False)
+        else: # There is previous course data
+            courses_df = pd.read_csv(self.course_out_path, usecols=["subject", "number", "id"])
+            for _, row in courses_df.iterrows():
+                Course.next_id += 1
+                Course.courses[row['subject'] + row['number']] = int(row['id'])
 
-        sections_df = pd.read_csv(f"{self.out_path}/sections.csv", usecols=['data_id'])
-        for _, row in sections_df.iterrows():
-            Section.sections.add(int(row['data_id']))
+        section_headers_df = pd.DataFrame(columns=Section.header_row)
+        os.makedirs(os.path.dirname(self.section_out_path), exist_ok=True)
+        section_headers_df.to_csv(self.section_out_path, header=True, mode='w', index=False)
+        
 
     async def run(self, num_of_tabs: int = 8) -> None:
         async with async_playwright() as playwright:
@@ -67,7 +63,7 @@ class TermScraper:
                 num_of_pages = pages_each + 1 if i < pages_left_over else pages_each
                 tasks.append(self.scrape_pages(running_start_page, running_start_page + num_of_pages-1))
                 running_start_page += num_of_pages
-            self.pages_current_running = num_of_tabs
+            self.pages_currently_running = num_of_tabs
 
             # csv handling
             self.courses: list[Course] = []
@@ -109,7 +105,7 @@ class TermScraper:
             except Error:
                 self.bad_pages.append(page_number)
         await page.close()
-        self.pages_current_running -= 1
+        self.pages_currently_running -= 1
 
 
     async def scrape_page(self, page: Page, page_number: int, retry_depth: int = 1) -> None:
@@ -131,18 +127,13 @@ class TermScraper:
     async def scrape_tr(self, page: Page, locator_tr: Locator, retry_depth: int = 1):
         try:
             section_tr: SectionTr = await create_section_tr(locator_tr.element_handle(timeout=5000))
-            if int(section_tr.tr_data_id) in Section.sections:
-                if self.is_previous_data: self.progress_bar.update(1) 
-                return
             course_id = Course.get_course(section_tr.subject, section_tr.course_number)
-            if course_id is not None:
+            if course_id:
                 self.sections.append(Section(section_tr=section_tr, course_id=course_id))
-                self.progress_bar.update(1)
-                return
-            new_course = Course(section_tr=section_tr)
-            await new_course.add_catalog_info(tr=section_tr.tr, page=page)
-            self.sections.append(Section(section_tr=section_tr, course_id=new_course.id))
-            self.courses.append(new_course)
+            else:
+                new_course_id = await create_course(section_tr=section_tr, page=page, courses=self.courses)
+                self.sections.append(Section(section_tr=section_tr, course_id=new_course_id))
+            
             self.progress_bar.update(1)
         except Error:
             if retry_depth >= self.MAX_TR_RETRY: raise Error("Max tr retry limit reached")
@@ -162,16 +153,16 @@ class TermScraper:
         await asyncio.sleep(self.TO_CSV_BUFFER/ 1000)
         courses_df = pd.DataFrame(map(Course.to_csv, self.courses))
         sections_df = pd.DataFrame(map(Section.to_csv, self.sections))
-        courses_df.to_csv(f"{self.out_path}/courses.csv", mode='a', header=False, index=False)
-        sections_df.to_csv(f"{self.out_path}/sections.csv", mode='a', header=False, index=False)
+        courses_df.to_csv(self.course_out_path, mode='a', header=False, index=False)
+        sections_df.to_csv(self.section_out_path, mode='a', header=False, index=False)
         self.courses = []
         self.sections = []
 
-        if self.pages_current_running > 0:
+        if self.pages_currently_running > 0:
             await self.add_to_csv()
     
     def add_to_csv_sync(self) -> None:
         courses_df = pd.DataFrame(map(Course.to_csv, self.courses))
         sections_df = pd.DataFrame(map(Section.to_csv, self.sections))
-        courses_df.to_csv(f"{self.out_path}/courses.csv", mode='a', header=False, index=False)
-        sections_df.to_csv(f"{self.out_path}/sections.csv", mode='a', header=False, index=False)
+        courses_df.to_csv(self.course_out_path, mode='a', header=False, index=False)
+        sections_df.to_csv(self.section_out_path, mode='a', header=False, index=False)

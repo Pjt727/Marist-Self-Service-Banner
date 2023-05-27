@@ -9,10 +9,10 @@ class SectionTr:
     course_number: str
     section: str
     instructor: str
+    instructor_email: str
     campus: str
     seat_status: str
     meeting_times: list[str]
-    tr_data_id: str
 
 async def create_section_tr(tr: ElementHandle) -> SectionTr:
     tr = await tr
@@ -31,6 +31,7 @@ async def create_section_tr(tr: ElementHandle) -> SectionTr:
 
     instructor_selector: ElementHandle = await tr.query_selector('td[xe-field="instructor"] a.email')
     instructor = await instructor_selector.inner_text() if instructor_selector else None
+    instructor_email = await instructor_selector.get_attribute("href") if instructor_selector else None
 
     campus_selector: ElementHandle = await tr.query_selector('td[xe-field="campus"]')
     campus = await campus_selector.inner_text() if campus_selector else None
@@ -47,9 +48,8 @@ async def create_section_tr(tr: ElementHandle) -> SectionTr:
             text = text[:text.find("\n")] + text[text.rfind("\n"):]
             meeting_times.append(text)
 
-    tr_data_id: str = await tr.get_attribute('data-id')
 
-    section_tr: SectionTr = SectionTr(tr, course_title=course_title, subject=subject, course_number=course_number, section=section, instructor=instructor, campus=campus, seat_status=seat_status, meeting_times=meeting_times, tr_data_id=tr_data_id)
+    section_tr: SectionTr = SectionTr(tr, course_title=course_title, subject=subject, course_number=course_number, section=section, instructor=instructor, instructor_email=instructor_email, campus=campus, seat_status=seat_status, meeting_times=meeting_times)
 
     return section_tr
 
@@ -90,56 +90,74 @@ async def catalog_parser(catalog_container: ElementHandle) -> tuple[str]:
 class Course:
     next_id = 1
     courses: dict[str, int] = {} # subject + course number, id
-    header_row: list[str] = ["course_title", "taught_how", "subject", "number", "co_requisites", "prerequisites", "college", "department", "credit_hours", "id"]
-    def __init__(self, section_tr: SectionTr) -> None:
+    header_row: list[str] = ["course_title", "subject", "number", "co_requisites", "prerequisites", "college", "department", "credit_hours", "id"]
+    def __init__(self, course_title: str, subject: str, number: str, co_requisites: str, prerequisites: str, college: str, department: str, credit_hours: str) -> None:
         try:
-            self.course_title, self.taught_how = section_tr.course_title.replace('"', "").split("\n")
+            self.course_title = course_title.replace('"', "").split("\n")[0]
         except ValueError:
-            self.course_title = section_tr.course_title
-            self.taught_how = section_tr.course_title
-        self.subject = section_tr.subject
-        self.number = section_tr.course_number
-        self.co_requisites = None
-        self.prerequisites = None
-        self.college = None
-        self.department = None
-        self.credit_hours = None
+            self.course_title = course_title
+        self.subject = subject
+        self.number = number
+        self.co_requisites = co_requisites
+        self.prerequisites = prerequisites
+        self.college = college
+        self.department = department
+        self.credit_hours = credit_hours
+        
         self.id = Course.next_id
-
+        Course.courses[self.subject + self.number] = self.id
         Course.next_id += 1
 
-        Course.courses[self.subject+self.number] = self.id
-    
+        
     def get_course(subject: str, number: str) -> int:
         return Course.courses.get(subject+number,None)
-    
-    # navigate to the catalog and get info
-    async def add_catalog_info(self, tr: ElementHandle, page: Page) -> None:
-        details_link: ElementHandle = await tr.wait_for_selector('a[class="section-details-link"]', timeout=2000)
-        await details_link.click()
-        details_container = await page.wait_for_selector('div[id="classDetailsContentDetailsDiv"]', timeout=2000)
-        
-        # Get co reqs, pre reqs and catalog info from a new course
-        co_reqs_a = await page.wait_for_selector('h3[id="coReqs"]')
-        await co_reqs_a.click()
-        co_requisites_container = await details_container.wait_for_selector('section[aria-labelledby="coReqs"]', timeout=2000)
-        self.co_requisites = await requisite_parser(co_requisites_container)
-
-        pre_reqs_a = await page.wait_for_selector('h3[id="preReqs"]', timeout=2000)
-        await pre_reqs_a.click()
-        prerequisites_container = await details_container.wait_for_selector('section[aria-labelledby="preReqs"]', timeout=2000)
-        self.prerequisites = await requisite_parser(prerequisites_container)
-        catalog_a = await page.wait_for_selector('h3[id="catalog"]', timeout=2000)
-        await catalog_a.click()
-        catalog_container = await details_container.wait_for_selector('section[aria-labelledby="catalog"]', timeout=2000)
-        self.college, self.department, self.credit_hours = await catalog_parser(catalog_container)
-
-        # hit the close button
-        close_button = await page.query_selector('button[class="primary-button small-button"]')
-        await close_button.click()
 
     def to_csv(self) -> list[str]:
         return [getattr(self, attr) for attr in Course.header_row]
+
+
+async def create_course(section_tr: SectionTr, page: Page, courses: list[Course]) -> int:
+    tr = section_tr.tr
+    details_link: ElementHandle = await tr.wait_for_selector('a[class="section-details-link"]', timeout=2000)
+    await details_link.click()
+    details_container = await page.wait_for_selector('div[id="classDetailsContentDetailsDiv"]', timeout=2000)
+    
+    # Get co reqs, pre reqs and catalog info from a new course
+    co_reqs_a = await page.wait_for_selector('h3[id="coReqs"]')
+    await co_reqs_a.click()
+    co_requisites_container = await details_container.wait_for_selector('section[aria-labelledby="coReqs"]', timeout=2000)
+    co_requisites = await requisite_parser(co_requisites_container)
+
+    pre_reqs_a = await page.wait_for_selector('h3[id="preReqs"]', timeout=2000)
+    await pre_reqs_a.click()
+    prerequisites_container = await details_container.wait_for_selector('section[aria-labelledby="preReqs"]', timeout=2000)
+    prerequisites = await requisite_parser(prerequisites_container)
+    catalog_a = await page.wait_for_selector('h3[id="catalog"]', timeout=2000)
+    await catalog_a.click()
+    catalog_container = await details_container.wait_for_selector('section[aria-labelledby="catalog"]', timeout=2000)
+    college, department, credit_hours = await catalog_parser(catalog_container)
+
+    # hit the close button
+    close_button = await page.query_selector('button[class="primary-button small-button"]')
+    await close_button.click()
+
+    # in case a different async task finished it while it was working
+    existing_course_id = Course.get_course(section_tr.subject, section_tr.course_number)
+    if existing_course_id: return existing_course_id
+
+    c = Course(course_title=section_tr.course_title, 
+               subject=section_tr.subject, 
+               number=section_tr.course_number, 
+               co_requisites=co_requisites, 
+               prerequisites=prerequisites, 
+               college=college, 
+               department=department, 
+               credit_hours=credit_hours
+               )
+    courses.append(c)
+    return c.id
+
+
 
 
 def meeting_times_parser(meeting_times: list[str]) -> list[tuple[str]]:
@@ -179,26 +197,33 @@ def seat_cap_parser(seat_status: str) -> int:
 
 
 class Section:
-    sections: set[str] = set()
-    header_row = ["section", "instructor", "meeting_times", "campus", "seat_cap", "data_id", "course_id"]
+    header_row = ["section", "instructor", "instructor_email", "meeting_times", "taught_how", "campus", "seat_cap", "course_id"]
     def __init__(self, section_tr: SectionTr, course_id: int) -> None:
         self.section: str = section_tr.section
         self.instructor: str = section_tr.instructor
+        try:
+            self.taught_how = section_tr.course_title.replace('"', "").split("\n", 1)[1]
+        except IndexError:
+            self.taught_how = None
+
         try:
             self.meeting_times: list[str] = meeting_times_parser(section_tr.meeting_times)
         except ValueError:
             self.meeting_times = None
 
+        if section_tr.instructor_email:
+            try:
+                self.instructor_email = section_tr.instructor_email[section_tr.instructor_email.find(":") + 1:]
+            except IndexError:
+                self.instructor_email = None
+        else:
+            self.instructor_email = None
         
         self.campus: str = section_tr.campus
         self.seat_cap: int = seat_cap_parser(section_tr.seat_status)
 
         self.course_id: int = course_id
-        self.data_id: int = int(section_tr.tr_data_id)
-        Section.sections.add(self.data_id)
 
 
     def to_csv(self) -> list[str]:
         return [getattr(self, attr) for attr in Section.header_row]
-
-    
