@@ -7,7 +7,7 @@ from tqdm import tqdm
 from .sanitizingClasses import SectionTr, Course, Section, create_section_tr, create_course
 
 class TermScraper:
-    def __init__(self, term: str, base_out_path: str, url: str,  is_headless: bool = False, MAX_PAGE_RETRY=5, MAX_TR_RETRY=3, TO_CSV_BUFFER: int=5_000) -> None:
+    def __init__(self, term: str, base_out_path: str, url: str,  is_headless: bool = False, MAX_PAGE_RETRY=5, MAX_TR_RETRY=3) -> None:
         self.term: str = term
         self.section_out_path: str = f"{base_out_path}/{term.replace(' ', '')}/sections.csv"
         self.course_out_path: str = f"{base_out_path}/courses.csv"
@@ -15,7 +15,6 @@ class TermScraper:
         self.url: str = url
         self.MAX_PAGE_RETRY: int = MAX_PAGE_RETRY
         self.MAX_TR_RETRY: int = MAX_TR_RETRY
-        self.TO_CSV_BUFFER: int = TO_CSV_BUFFER
 
         self.prep_csv()
 
@@ -27,7 +26,8 @@ class TermScraper:
         else: # There is previous course data
             courses_df = pd.read_csv(self.course_out_path, usecols=["subject", "number", "id"])
             for _, row in courses_df.iterrows():
-                Course.next_id += 1
+                if int(row['id']) >= Course.next_id:
+                    Course.next_id = int(row['id']) + 1
                 Course.courses[row['subject'] + row['number']] = int(row['id'])
 
         section_headers_df = pd.DataFrame(columns=Section.header_row)
@@ -36,10 +36,7 @@ class TermScraper:
         
 
     async def run(self, num_of_tabs: int = 8) -> None:
-        async with async_playwright() as playwright:
-            self.bad_pages: list[int] = []
-            
-
+        async with async_playwright() as playwright:            
             # getting info to configure tasks
             self.playwright = playwright
             self.browser = await playwright.chromium.launch(headless=self.headless)
@@ -68,7 +65,6 @@ class TermScraper:
             # csv handling
             self.courses: list[Course] = []
             self.sections: list[Section] = []
-            tasks.append(self.add_to_csv())
 
             self.progress_bar = tqdm(total=self.sections_count)
 
@@ -78,7 +74,6 @@ class TermScraper:
             await self.browser.close()
 
             self.add_to_csv_sync() # ensure everything was submitted
-            print(f"Pages with mistakes: {self.bad_pages}")
     
 
     async def nav_to_search(self, page: Page):
@@ -100,10 +95,8 @@ class TermScraper:
         await self.nav_to_search(page)
 
         for page_number in range(start_page, end_page + 1):
-            try:
-                await self.scrape_page(page=page, page_number=page_number)
-            except Error:
-                self.bad_pages.append(page_number)
+            await self.scrape_page(page=page, page_number=page_number)
+            
         await page.close()
         self.pages_currently_running -= 1
 
@@ -147,19 +140,6 @@ class TermScraper:
         page_number_element: Locator = page.locator('input[title="Page"]')
         await page_number_element.fill(str(page_number))
         await page_number_element.press('Enter')
-    
-
-    async def add_to_csv(self) -> None:
-        await asyncio.sleep(self.TO_CSV_BUFFER/ 1000)
-        courses_df = pd.DataFrame(map(Course.to_csv, self.courses))
-        sections_df = pd.DataFrame(map(Section.to_csv, self.sections))
-        courses_df.to_csv(self.course_out_path, mode='a', header=False, index=False)
-        sections_df.to_csv(self.section_out_path, mode='a', header=False, index=False)
-        self.courses = []
-        self.sections = []
-
-        if self.pages_currently_running > 0:
-            await self.add_to_csv()
     
     def add_to_csv_sync(self) -> None:
         courses_df = pd.DataFrame(map(Course.to_csv, self.courses))

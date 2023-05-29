@@ -91,7 +91,7 @@ class Course:
     next_id = 1
     courses: dict[str, int] = {} # subject + course number, id
     header_row: list[str] = ["course_title", "subject", "number", "co_requisites", "prerequisites", "college", "department", "credit_hours", "id"]
-    def __init__(self, course_title: str, subject: str, number: str, co_requisites: str, prerequisites: str, college: str, department: str, credit_hours: str) -> None:
+    def __init__(self, course_title: str, subject: str, number: str, co_requisites: str, prerequisites: str, college: str, department: str, credit_hours: str, id: str) -> None:
         try:
             self.course_title = course_title.replace('"', "").split("\n")[0]
         except ValueError:
@@ -104,9 +104,8 @@ class Course:
         self.department = department
         self.credit_hours = credit_hours
         
-        self.id = Course.next_id
-        Course.courses[self.subject + self.number] = self.id
-        Course.next_id += 1
+        self.id = id
+        
 
         
     def get_course(subject: str, number: str) -> int:
@@ -143,8 +142,10 @@ async def create_course(section_tr: SectionTr, page: Page, courses: list[Course]
 
     # in case a different async task finished it while it was working
     existing_course_id = Course.get_course(section_tr.subject, section_tr.course_number)
-    if existing_course_id: return existing_course_id
-
+    if existing_course_id is not None: return existing_course_id
+    course_id = Course.next_id
+    Course.courses[section_tr.subject + section_tr.course_number] = course_id
+    Course.next_id += 1
     c = Course(course_title=section_tr.course_title, 
                subject=section_tr.subject, 
                number=section_tr.course_number, 
@@ -152,7 +153,8 @@ async def create_course(section_tr: SectionTr, page: Page, courses: list[Course]
                prerequisites=prerequisites, 
                college=college, 
                department=department, 
-               credit_hours=credit_hours
+               credit_hours=credit_hours,
+               id=course_id
                )
     courses.append(c)
     return c.id
