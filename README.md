@@ -2,13 +2,13 @@
 Web scraper for courses on Marist self-service
 
 ## Notes
-- Data is admittedly over fit to my needs for another project
-- Gets the following information on all courses and sections
-    - Sections csv header
-        - "section", "instructor", "instructor_email", "meeting_times", "taught_how", "campus", "seat_cap", "course_id"
-    - Courses csv header
-        - "course_title", "subject", "number", "co_requisites", "prerequisites", "college", "department", "credit_hours", "id"
-- Dependencies (requirements.txt)
+- changed from scraping the HTML on the page to getting the JSON data
+    - considerably faster
+- Steps taken to scrape a term:
+    - playwright opens an instance of chromium
+    - associates the session cookie with a given term (done bc term query field does not work)
+    - opens n pages at once loading the max (500) sections each to load all concurrently
+    - dumps all json data to a file
 
 ## How to Run
 - Set up an environment
