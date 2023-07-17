@@ -13,6 +13,9 @@ Web scraper for courses on Marist self-service
 ## How to Run
 - Set up an environment
 - Install the dependencies
-- run the main file with arguments of the search parameter for the term you want (if it includes spaces it must be in quotes or it will be interpreted as two separate searches)
-    - ex: python .\main.py "Spring 2023" "Fall 2023"
-- It will will then generate csv's in the .\output\ folder
+- To scrape sections for a given term input the search for the term
+    - ex: python .\main.py sections "Spring 2023" "Fall 2023"
+- To scrape courses for the latest term
+    - Will take from scraped sections to get course reference number for details
+    - python .\main.py courses
+- It will will then generate json's in the .\output\ folder

@@ -5,13 +5,12 @@ import math
 from playwright.async_api import async_playwright, BrowserContext 
 
 
-async def get_sections(pageOffset: int, pageMaxsize: int, context: BrowserContext, running_data: list) -> list[dict]:
-    url = f"https://ssb1-reg.banner.marist.edu/StudentRegistrationSsb/ssb/searchResults/searchResults?startDatepicker=&endDatepicker=&pageOffset={pageOffset}&pageMaxSize={pageMaxsize}"
+async def add_sections(page_offset: int, page_max_size: int, context: BrowserContext, running_data: list):
+    url = f"https://ssb1-reg.banner.marist.edu/StudentRegistrationSsb/ssb/searchResults/searchResults?startDatepicker=&endDatepicker=&pageOffset={page_offset}&pageMaxSize={page_max_size}"
     page = await context.new_page()
     await page.goto(url)
     content = await page.content()
-    # Cheat to get rid of the HTML formatting and have just json
-    content = content[content.find("{"):-20]
+    content = content[content.find("{"):content.rfind("}") + 1]
     try:
         content = json.loads(content)
     except json.decoder.JSONDecodeError as e:
@@ -29,7 +28,7 @@ async def scrape_term(term):
     url = "https://ssb1-reg.banner.marist.edu/StudentRegistrationSsb/ssb/term/termSelection?mode=search"
     count_per_page = 500 
     async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=False) 
+        browser = await playwright.chromium.launch(headless=True) 
         context = await browser.new_context()
         page = await context.new_page()
 
@@ -50,7 +49,7 @@ async def scrape_term(term):
         tasks = []
         running_data = []
         for i in range(math.ceil(sections_count / count_per_page)):
-            tasks.append(get_sections(i, count_per_page, context, running_data))
+            tasks.append(add_sections(i, count_per_page, context, running_data))
         
         await asyncio.gather(*tasks)
 
@@ -62,4 +61,4 @@ async def scrape_term(term):
 
 
 if __name__ == "__main__":
-    asyncio.run(scrape_term("Fall 2023"))
+    asyncio.run(scrape_term('2023'))

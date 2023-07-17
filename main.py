@@ -1,19 +1,37 @@
-from JsonParser.json_dumper import scrape_term
+from Scraper.dump_sections import scrape_term
+from Scraper.dump_courses import scrape_latest_term
 import asyncio
 import sys
 
 async def main():
+    instructions = "To scrape sections: 'python .\main.py sections \"Season Year\"\n\
+        To scrape courses: 'python .\main.py courses'"
     try:
-        terms = sys.argv[1:]
+        args = sys.argv[1:]
     except IndexError:
-        print("Please put the term(s) you want to scrap as arguments as \"Season Year\"")
+        print("Invalid input")
+        print(instructions)
 
-    tasks = []
+    main_arg: str = args[0]
 
-    for term in terms:
-        tasks.append(scrape_term(term))
-    
-    await asyncio.gather(*tasks)
+    if main_arg.lower() == 'sections':
+        try:
+            terms = args[1:]
+        except IndexError:
+            print("Invalid input")
+            print(instructions)
+
+        tasks = []
+        for term in terms:
+            tasks.append(scrape_term(term))
+        
+        await asyncio.gather(*tasks)
+    elif main_arg.lower() == 'courses':
+        await scrape_latest_term()
+    else:
+        print("Invalid input")
+        print(instructions)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
